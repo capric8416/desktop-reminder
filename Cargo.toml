@@ -1,0 +1,12 @@
+[package]
+name = "desktop-reminder"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Send desktop notifications until a specified end time on Linux, Windows, and macOS"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+notify-rust = "4"

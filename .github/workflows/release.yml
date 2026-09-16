@@ -1,0 +1,137 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release artifact
+        run: |
+          mkdir -p release
+          tar -czf "release/desktop-reminder-${{ github.ref_name }}-linux-x86_64.tar.gz" \
+            -C target/release desktop-reminder
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: release/*
+          if-no-files-found: error
+
+  build-windows:
+    name: build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive `
+            -Path target\release\desktop-reminder.exe `
+            -DestinationPath "release\desktop-reminder-${{ github.ref_name }}-windows-x86_64.zip" `
+            -Force
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release/*
+          if-no-files-found: error
+
+  build-macos:
+    name: build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package release artifact
+        run: |
+          mkdir -p release
+          tar -czf "release/desktop-reminder-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release" desktop-reminder
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  publish-release:
+    name: publish release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/**
