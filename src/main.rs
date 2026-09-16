@@ -158,9 +158,24 @@ fn show_notification(title: &str, message: &str, icon_path: &Path) -> Result<()>
     Ok(())
 }
 
+fn format_message(message: &str, current: u64, total: Option<u64>) -> String {
+    match total {
+        Some(total) => format!("{message} ({current} / {total})"),
+        None => format!("{message} ({current})"),
+    }
+}
+
 fn run(args: Args) -> Result<()> {
     let end_time = args.end_time.as_deref().map(parse_end_time).transpose()?;
     let interval = parse_interval(&args.interval)?;
+    let total = end_time.map(|end_time| {
+        (end_time - Local::now())
+            .to_std()
+            .unwrap_or(Duration::ZERO)
+            .as_secs()
+            / interval.as_secs()
+    });
+
     let icon = prepare_icon()?;
 
     if let Some(end_time) = end_time {
@@ -180,6 +195,7 @@ fn run(args: Args) -> Result<()> {
         );
     }
 
+    let mut current = 0;
     loop {
         if let Some(end_time) = end_time {
             let remaining = (end_time - Local::now()).to_std().unwrap_or(Duration::ZERO);
@@ -193,7 +209,9 @@ fn run(args: Args) -> Result<()> {
             break;
         }
 
-        show_notification(&args.title, &args.message, &icon.path)?;
+        current += 1;
+        let message = format_message(&args.message, current, total);
+        show_notification(&args.title, &message, &icon.path)?;
     }
 
     if end_time.is_some() {
@@ -208,7 +226,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_end_time, parse_interval};
+    use super::{format_message, parse_end_time, parse_interval};
     use std::time::Duration;
 
     #[test]
@@ -232,5 +250,15 @@ mod tests {
             time.format("%Y-%m-%d %H:%M:%S").to_string(),
             "2026-09-17 10:38:09"
         );
+    }
+
+    #[test]
+    fn formats_message_with_total_count() {
+        assert_eq!(format_message("提醒", 2, Some(5)), "提醒 (2 / 5)");
+    }
+
+    #[test]
+    fn formats_message_without_total_count() {
+        assert_eq!(format_message("提醒", 2, None), "提醒 (2)");
     }
 }
